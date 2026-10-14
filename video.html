@@ -5,7 +5,7 @@
 <title>Hausman Erklärvideo</title>
 <style>
   html, body { margin: 0; padding: 0; background: #111; }
-  #stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; background: #F7E7A6; }
+  #stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; background: #1d1d1b; }
   svg { display: block; }
   text { font-family: "Inter Display", "Inter", sans-serif; }
   #controls { font: 14px sans-serif; color: #ddd; padding: 8px; }
@@ -15,7 +15,8 @@
 <body>
 <div id="stage">
 <svg id="svg" width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
-  <rect id="bg" width="1920" height="1080" fill="#F7E7A6"/>
+  <defs id="defs"></defs>
+  <rect width="1920" height="1080" fill="#1d1d1b"/>
   <g id="scenes"></g>
 </svg>
 </div>
@@ -26,122 +27,180 @@
 </div>
 <script src="characters.js"></script>
 <script>
-const { C, el, g, P, circle, rrect, technician, customer, handGrip, sparkle, dust, grid, squiggle, tablet } = Art;
+const { C, el, g, P, circle, rrect, technician, customer, handshake, handOpen, handGrip, handPoint, sparkle, dust, grid } = Art;
 const DURATION = 30;
-const BG_GREY = "#ECEAE3", BG_PALE = "#F7E7A6", BG_GOLD = "#E8C85E", BG_DARK = "#1d1d1b", BG_CREAM = "#FFF6DC";
+const BG = { pale: "#F7E7A6", gold: "#E8C85E", dark: "#1d1d1b", cream: "#FFF6DC", grey: "#ECEAE3" };
 const scenesRoot = document.getElementById("scenes");
-const bgRect = document.getElementById("bg");
+const defs = document.getElementById("defs");
 
-// ---------------------------------------------------------------- easing
+// ================================================================ easing
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, p) => a + (b - a) * p;
-const easeOut = p => 1 - Math.pow(1 - p, 3);
-const easeInOut = p => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-const easeIn = p => p * p * p;
-const back = p => { p = clamp(p); const s = 1.6; return 1 + (s + 1) * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2); };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const easeOut5 = p => 1 - Math.pow(1 - clamp(p), 5);
+const easeIn = p => Math.pow(clamp(p), 3);
+const easeInOut = p => { p = clamp(p); return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const expoInOut = p => { p = clamp(p); return p === 0 ? 0 : p === 1 ? 1 : p < 0.5 ? Math.pow(2, 20 * p - 10) / 2 : (2 - Math.pow(2, -20 * p + 10)) / 2; };
+const expoIn = p => { p = clamp(p); return p === 0 ? 0 : Math.pow(2, 10 * p - 10); };
+// damped spring 0 → 1 (overshoot + settle), used for organic pops
+const spring = (p, f = 4.2, d = 6) => { p = Math.max(0, p); return 1 - Math.exp(-d * p) * Math.cos(f * Math.PI * p); };
+const prog = (t, t0, dur) => clamp((t - t0) / dur);
 
-// ---------------------------------------------------------------- scene system
+// camera keyframes: [[t, x, y, zoom, easeFn?], ...] — zoom interpolated in log space
+function kf(t, keys) {
+  if (t <= keys[0][0]) return keys[0].slice(1, 4);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t <= b[0]) {
+      const e = (b[4] || easeInOut)((t - a[0]) / (b[0] - a[0]));
+      return [lerp(a[1], b[1], e), lerp(a[2], b[2], e), Math.exp(lerp(Math.log(a[3]), Math.log(b[3]), e))];
+    }
+  }
+  return keys[keys.length - 1].slice(1, 4);
+}
+
+// ================================================================ scene system
 const scenes = [];
-let sceneIdx = 0;
-function scene(name, t0, t1, bg, build) {
+function scene(o) {
+  const i = scenes.length;
   const root = g(scenesRoot);
-  // each scene carries its own background and is revealed by a growing circle (no cross-fades / ghosting)
-  const cp = el("clipPath", { id: "wipe" + sceneIdx }, root);
-  const wipe = el("circle", { cx: 1700, cy: 120, r: 0 }, cp);
-  const content = g(root, { "clip-path": `url(#wipe${sceneIdx++})` });
-  el("rect", { width: 1920, height: 1080, fill: bg }, content);
-  const s = { name, t0, t1, bg, root, wipe, anims: [] };
-  build(g(content), s);
+  const filter = el("filter", { id: "blur" + i, x: "-10%", y: "-10%", width: "120%", height: "120%" }, defs);
+  const blur = el("feGaussianBlur", { stdDeviation: "0 0" }, filter);
+  const cp = el("clipPath", { id: "wipe" + i }, defs);
+  const wipe = el("circle", { cx: 960, cy: 540, r: 2600 }, cp);
+  const clipG = g(root, { "clip-path": `url(#wipe${i})` });
+  el("rect", { width: 1920, height: 1080, fill: o.bg }, clipG);
+  const cam = g(clipG);
+  const layerBack = g(cam), layerMain = g(cam);
+  const s = { ...o, i, root, blur, wipe, camG: cam, camKeys: o.cam, anims: [], layerBack };
+  o.build(layerMain, s, layerBack);
   scenes.push(s);
 }
 const on = (s, fn) => s.anims.push(fn);
-// node transform helper: position + scale + rotate around an anchor, plus optional float
-function animNode(s, node, { x = 0, y = 0, t0 = 0, dur = 0.6, from = "pop", float = 0, period = 3, phase = 0, rot = 0 }) {
-  on(s, t => {
-    const p = clamp((t - t0) / dur);
-    let k = 1, dx = 0, dy = 0, op = p > 0 ? 1 : 0;
-    if (from === "pop") k = p <= 0 ? 0 : back(p);
-    if (from === "up") { dy = (1 - easeOut(p)) * 700; }
-    if (from === "left") { dx = -(1 - easeOut(p)) * 900; }
-    if (from === "right") { dx = (1 - easeOut(p)) * 900; }
-    if (from === "fade") op = easeOut(p);
-    const fl = float ? float * Math.sin((t + phase) * Math.PI * 2 / period) : 0;
-    const r = rot ? rot * Math.sin((t + phase) * Math.PI * 2 / period) : 0;
-    node.setAttribute("transform", `translate(${x + dx},${y + dy + fl}) rotate(${r}) scale(${k})`);
-    node.setAttribute("opacity", op);
-  });
-}
-// subtle life for characters: head tilt + breathing
-function alive(s, ch, phase = 0) {
-  on(s, t => {
-    const k = Math.sin((t + phase) * Math.PI * 2 / 2.8);
-    ch.head.setAttribute("transform", `translate(0,${24 + 2 * k}) rotate(${1.6 * k} 0 -100)`);
-  });
-}
-function swingArm(s, arm, cx, cy, amp, period, t0 = 0) {
-  on(s, t => arm.setAttribute("transform", t < t0 ? "" : `rotate(${amp * Math.sin((t - t0) * Math.PI * 2 / period)} ${cx} ${cy})`));
-}
 
-// ---------------------------------------------------------------- reference-style decoration kit
+// ---------------------------------------------------------------- motion helpers
+function pop(s, node, x, y, t0, o = {}) {
+  on(s, t => {
+    const p = t - t0;
+    const k = p <= 0 ? 0 : spring(p / (o.dur || 0.7));
+    const fl = o.float ? o.float * Math.sin((t + (o.phase || 0)) * Math.PI * 2 / (o.period || 3.2)) : 0;
+    const rot = o.rot ? o.rot * (1 - clamp(p / 0.9)) * Math.sin(p * 18) : 0;
+    node.setAttribute("transform", `translate(${x},${y + fl}) rotate(${rot}) scale(${k})`);
+    node.setAttribute("opacity", p > 0 ? 1 : 0);
+  });
+}
+function drawOn(s, group, t0, dur = 0.7) {
+  const items = [...group.querySelectorAll("path")].map(p => {
+    const len = p.getTotalLength();
+    const hasFill = p.getAttribute("fill") && p.getAttribute("fill") !== "none";
+    if (len > 0) p.style.strokeDasharray = `${len} ${len}`;
+    return { p, len, hasFill };
+  });
+  on(s, t => items.forEach(({ p, len, hasFill }, i) => {
+    const q = easeInOut(prog(t, t0 + i * 0.04, dur));
+    if (len > 0) p.style.strokeDashoffset = len * (1 - q);
+    if (hasFill) p.setAttribute("fill-opacity", easeOut(prog(t, t0 + i * 0.04 + dur * 0.5, 0.3)));
+  }));
+}
+function line(s, parent, d, t0, dur = 0.9, stroke = C.ink, w = 2.6) {
+  const p = P(parent, d, "none", { stroke, w });
+  const len = p.getTotalLength();
+  p.style.strokeDasharray = `${len} ${len}`;
+  on(s, t => { p.style.strokeDashoffset = len * (1 - easeInOut(prog(t, t0, dur))); });
+  return p;
+}
 function sparkles(s, parent, list, color = C.ink, t0 = 0.3) {
   list.forEach(([x, y, r], i) => {
     const n = g(parent); sparkle(n, 0, 0, r, color);
     on(s, t => {
-      const p = clamp((t - t0 - i * 0.12) / 0.5);
-      const tw = 0.85 + 0.2 * Math.sin((t + i) * 3.1);
-      n.setAttribute("transform", `translate(${x},${y}) scale(${(p <= 0 ? 0 : back(p)) * tw})`);
+      const p = t - t0 - i * 0.1;
+      const k = p <= 0 ? 0 : spring(p / 0.6) * (0.88 + 0.16 * Math.sin((t + i * 1.3) * 3.2));
+      n.setAttribute("transform", `translate(${x},${y}) rotate(${p > 0 ? (1 - clamp(p / 0.6)) * 90 : 0}) scale(${k})`);
     });
   });
 }
-// thin line that draws itself on
-function drawLine(s, parent, d, t0, dur = 0.8, stroke = C.ink, w = 2.6) {
-  const p = P(parent, d, "none", { stroke, w });
-  const len = p.getTotalLength();
-  p.style.strokeDasharray = `${len} ${len}`;
-  on(s, t => { p.style.strokeDashoffset = len * (1 - easeInOut(clamp((t - t0) / dur))); });
-  return p;
+function burst(s, parent, x, y, t0, color = C.ink, n = 8, radius = 150) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + 0.3, sp = g(parent);
+    sparkle(sp, 0, 0, i % 2 ? 12 : 18, color);
+    on(s, t => {
+      const p = prog(t, t0, 0.7);
+      const d = easeOut(p) * radius * (i % 2 ? 0.8 : 1);
+      sp.setAttribute("transform", `translate(${x + Math.cos(a) * d},${y + Math.sin(a) * d}) scale(${p <= 0 || p >= 1 ? 0 : Math.sin(Math.PI * p)})`);
+    });
+  }
 }
+let uid = 0;
 function gridIn(s, parent, x, y, w, h, t0, color = C.ink) {
   const grp = grid(parent, x, y, w, h, 34, color);
-  const clipId = "gc" + Math.random().toString(36).slice(2);
-  const cp = el("clipPath", { id: clipId }, parent);
+  const id = "gc" + (uid++);
+  const cp = el("clipPath", { id }, defs);
   const r = el("rect", { x, y: y - 4, width: 0, height: h + 8 }, cp);
-  grp.setAttribute("clip-path", `url(#${clipId})`);
-  on(s, t => r.setAttribute("width", (w + 8) * easeInOut(clamp((t - t0) / 0.9))));
-  return grp;
+  grp.setAttribute("clip-path", `url(#${id})`);
+  on(s, t => r.setAttribute("width", (w + 8) * expoInOut(prog(t, t0, 1.0))));
 }
 function dustIn(s, parent, cx, cy, rx, ry, n, seed, t0, color = C.ink) {
   const d = dust(parent, cx, cy, rx, ry, n, seed, color);
-  on(s, t => d.setAttribute("opacity", easeOut(clamp((t - t0) / 0.6))));
-  return d;
+  on(s, t => { const p = easeOut(prog(t, t0, 0.8)); d.setAttribute("opacity", p); d.setAttribute("transform", `translate(${cx},${cy}) scale(${0.8 + 0.2 * p}) translate(${-cx},${-cy})`); });
 }
-// speech bubble (white, thin outline, tail bottom-left) with stipple shadow, content callback
-function bubble(parent, w, h, content, tail = "left") {
+function bubble(parent, w, h, tail = "left") {
   const b = g(parent);
-  dust(b, w * 0.12, h * 0.62, w * 0.55, h * 0.18, 220, 11);
-  const r = 34;
-  const tl = tail === "left";
+  dust(b, w * 0.1, h * 0.6, w * 0.56, h * 0.2, 240, 11);
+  const r = 34, tl = tail === "left";
   const d = `M${-w / 2 + r},${-h / 2} H${w / 2 - r} Q${w / 2},${-h / 2} ${w / 2},${-h / 2 + r} V${h / 2 - r} Q${w / 2},${h / 2} ${w / 2 - r},${h / 2} ` +
-    (tl ? `H${-w / 2 + 90} L${-w / 2 + 10},${h / 2 + 80} L${-w / 2 + 40},${h / 2} ` : `H${w / 2 - 40} L${w / 2 - 10},${h / 2 + 80} L${w / 2 - 90},${h / 2} `) +
+    (tl ? `H${-w / 2 + 92} L${-w / 2 + 12},${h / 2 + 78} L${-w / 2 + 42},${h / 2} ` : `H${w / 2 - 42} L${w / 2 - 12},${h / 2 + 78} L${w / 2 - 92},${h / 2} `) +
     `H${-w / 2 + r} Q${-w / 2},${h / 2} ${-w / 2},${h / 2 - r} V${-h / 2 + r} Q${-w / 2},${-h / 2} ${-w / 2 + r},${-h / 2} Z`;
   P(b, d, C.white, { w: 3.5 });
-  content(b);
-  return b;
+  return { node: b, content: g(b) };
 }
-function label(parent, str, x, y, size = 46, fill = C.ink) {
-  const t = el("text", { x, y, "font-size": size, "font-weight": 800, fill, "text-anchor": "middle", "dominant-baseline": "middle", "letter-spacing": 0.5 }, parent);
-  t.textContent = str;
-  return t;
+function textReveal(s, parent, str, x, y, t0, o = {}) {
+  const grp = g(parent);
+  const id = "tc" + (uid++);
+  const size = o.size || 48;
+  const cp = el("clipPath", { id }, defs);
+  el("rect", { x: x - 2000, y: y - size * 0.75, width: 4000, height: size * 1.5 }, cp);
+  const inner = g(grp, { "clip-path": `url(#${id})` });
+  const tx = el("text", { x, y, "font-size": size, "font-weight": o.weight || 800, fill: o.fill || C.ink, "text-anchor": o.anchor || "middle", "dominant-baseline": "middle", "letter-spacing": o.ls || 0 }, inner);
+  tx.textContent = str;
+  on(s, t => { const p = easeOut5(prog(t, t0, 0.6)); tx.setAttribute("transform", `translate(0,${(1 - p) * size * 1.2})`); });
+  return grp;
 }
 
-// ---------------------------------------------------------------- icon set (white/black/gold, thin outline)
+// ---------------------------------------------------------------- character animation helpers
+function blinkK(t, seed = 0) {
+  const period = 2.9 + (seed % 3) * 0.4, ph = ((t + seed * 0.77) % period) / period;
+  const d = 0.13 / period;
+  return ph < d ? 1 - 0.9 * Math.sin(Math.PI * ph / d) : 1;
+}
+function face(ch, t, o = {}) {
+  const k = Math.min(blinkK(t, o.seed || 0), 1 - 0.55 * (o.happy || 0));
+  const lx = o.lookX || 0, ly = o.lookY || 0, ex = o.eyeX || 29;
+  ch.eyeL.setAttribute("transform", `translate(${lx},${ly}) translate(${-ex},-232) scale(1,${k}) translate(${ex},232)`);
+  ch.eyeR.setAttribute("transform", `translate(${lx},${ly}) translate(${ex},-232) scale(1,${k}) translate(${-ex},232)`);
+  ch.brows.setAttribute("transform", `translate(${lx * 0.4},${-7 * (o.brow || 0)})`);
+  const bob = 2.2 * Math.sin((t + (o.seed || 0)) * Math.PI * 2 / 2.8);
+  ch.head.setAttribute("transform", `translate(${(o.headX || 0)},${bob}) rotate(${(o.tilt || 0) + 1.2 * Math.sin((t + 0.4) * Math.PI * 2 / 3.4)} 0 -120)`);
+}
+function enterUp(t, t0, dist = 650, dur = 0.9) {
+  const p = t - t0;
+  if (p <= 0) return { y: dist, v: 0 };
+  const k = spring(p / dur, 3.2, 6.5), k2 = spring((p + 0.02) / dur, 3.2, 6.5);
+  return { y: dist * (1 - k), v: (k2 - k) * dist };
+}
+function place(node, x, y, sc = 1, flip = false, rot = 0) {
+  node.setAttribute("transform", `translate(${x},${y}) rotate(${rot}) scale(${flip ? -sc : sc},${sc})`);
+}
+const REST_R = [168, 300], REST_L = [-166, 302];
+const lerp2 = (a, b, p) => [lerp(a[0], b[0], p), lerp(a[1], b[1], p)];
+
+// ---------------------------------------------------------------- icons
 const icon = {
   tap(p) {
     P(p, "M-90,-30 H30 C62,-30 78,-14 78,18 V40 M-90,-56 V-4 M-40,-30 V-60 M-70,-62 H-10", "none", { w: 9 });
     P(p, "M78,72 C66,92 66,104 78,112 C90,104 90,92 78,72 Z", C.gold, { w: 3.5 });
   },
   radiator(p) {
-    rrect(p, -110, -60, 220, 120, 14, C.white, { w: 4 });
+    P(p, "M-96,-60 H96 Q110,-60 110,-46 V46 Q110,60 96,60 H-96 Q-110,60 -110,46 V-46 Q-110,-60 -96,-60 Z", C.white, { w: 4 });
     for (let i = 1; i < 6; i++) P(p, `M${-110 + i * 36.6},-44 V44`, "none", { w: 4 });
     P(p, "M-85,60 v18 M85,60 v18", "none", { w: 5 });
   },
@@ -149,15 +208,14 @@ const icon = {
     P(p, "M0,-80 C30,-40 70,-10 60,30 C52,64 26,80 0,80 C-26,80 -52,64 -60,30 C-68,0 -40,-20 -30,-50 C-20,-30 -10,-20 0,-15 C10,-40 4,-60 0,-80 Z", C.gold, { w: 4 });
     P(p, "M0,20 C14,34 20,48 14,60 C8,72 -8,72 -14,60 C-20,48 -12,34 0,20 Z", C.white, { w: 3.5 });
   },
-  snow(p) {
+  snow(p, col = C.ink) {
     for (let a = 0; a < 180; a += 60) {
       const r = a * Math.PI / 180, c = Math.cos(r) * 70, s = Math.sin(r) * 70;
-      P(p, `M${-c},${-s} L${c},${s}`, "none", { w: 8 });
+      P(p, `M${-c},${-s} L${c},${s}`, "none", { w: 8, stroke: col });
     }
     for (let a = 0; a < 360; a += 60) {
-      const r = a * Math.PI / 180, mx = Math.cos(r) * 44, my = Math.sin(r) * 44;
-      const l = 18;
-      P(p, `M${mx + Math.cos(r + 0.8) * l},${my + Math.sin(r + 0.8) * l} L${mx},${my} L${mx + Math.cos(r - 0.8) * l},${my + Math.sin(r - 0.8) * l}`, "none", { w: 6 });
+      const r = a * Math.PI / 180, mx = Math.cos(r) * 44, my = Math.sin(r) * 44, l = 18;
+      P(p, `M${mx + Math.cos(r + 0.8) * l},${my + Math.sin(r + 0.8) * l} L${mx},${my} L${mx + Math.cos(r - 0.8) * l},${my + Math.sin(r - 0.8) * l}`, "none", { w: 6, stroke: col });
     }
     circle(p, 0, 0, 12, C.gold, { w: 3.5 });
   },
@@ -167,238 +225,409 @@ const icon = {
     [[20, -10], [50, 0], [80, -10], [35, 25], [65, 30]].forEach(([x, y]) => P(p, `M${x},${y} l-5,16`, "none", { w: 6, stroke: C.goldDeep }));
   },
   roller(p) {
-    rrect(p, -80, -70, 140, 50, 14, C.gold, { w: 4 });
+    P(p, "M-80,-58 C-80,-66 -74,-70 -66,-70 H46 C54,-70 60,-66 60,-58 V-32 C60,-24 54,-20 46,-20 H-66 C-74,-20 -80,-24 -80,-32 Z", C.gold, { w: 4 });
     P(p, "M60,-45 H85 V10 L0,30 V60", "none", { w: 7 });
-    rrect(p, -14, 60, 28, 70, 10, C.ink, { w: 3 });
-  },
-  house(p) {
-    P(p, "M-90,0 L0,-80 L90,0 V80 H-90 Z", C.white, { w: 5 });
-    rrect(p, -24, 20, 48, 60, 4, C.gold, { w: 4 });
-    P(p, "M40,-45 V-75 H62 V-26", "none", { w: 5 });
+    P(p, "M-14,60 H14 V130 H-14 Z", C.ink, { w: 3 });
   },
 };
 
-// ================================================================ 1 · Misconception (0 – 4.6)
-scene("question", 0, 4.6, BG_PALE, (r, s) => {
-  gridIn(s, r, 1150, 380, 340, 300, 0.2);
-  drawLine(s, r, "M260,330 C380,300 520,330 580,420", 0.4);
-  drawLine(s, r, "M1380,860 C1500,820 1610,860 1640,930 C1660,980 1600,1000 1590,960 C1580,920 1650,880 1720,900", 0.8);
-  sparkles(s, r, [[330, 560, 44], [700, 170, 38], [1540, 300, 28], [1700, 640, 34], [440, 890, 24]], C.ink, 0.3);
-  // customer, cropped at the bottom like in the reference
-  const cG = g(r); const cust = customer(cG, { pose: "think" });
-  animNode(s, cG, { x: 860, y: 770, t0: 0.05, dur: 0.8, from: "up" });
-  alive(s, cust);
-  // two thought bubbles: heating? sanitary?
-  const b1 = bubble(r, 330, 230, b => { const i = g(b, { transform: "scale(0.95)" }); icon.radiator(i); }, "right");
-  animNode(s, b1, { x: 420, y: 250, t0: 0.9, dur: 0.6, float: 8, period: 3.2 });
-  const b2 = bubble(r, 330, 230, b => { const i = g(b, { transform: "translate(-6,-10) scale(1)" }); icon.tap(i); });
-  animNode(s, b2, { x: 1350, y: 230, t0: 1.5, dur: 0.6, float: 8, period: 3.2, phase: 1.2 });
-  // "?!" badge
-  const q = g(r);
-  circle(q, 0, 0, 78, C.ink, { w: 0 });
-  label(q, "?!", 0, 4, 92, C.gold);
-  animNode(s, q, { x: 1130, y: 430, t0: 2.3, dur: 0.55, rot: 8, period: 0.9 });
+// ================================================================ 1 · Misconception  (0 – 4.6)
+scene({
+  name: "question", t0: 0, t1: 4.6, bg: BG.pale, enter: "cut",
+  // slow push, then a fast zoom straight into the black "?!" badge (match-cut to the next scene)
+  cam: [[0, 960, 560, 1.0], [3.7, 960, 530, 1.07], [4.6, 1130, 430, 16, expoIn]],
+  build(r, s, bgL) {
+    gridIn(s, bgL, 1150, 380, 340, 300, 0.25);
+    line(s, bgL, "M260,330 C380,300 520,330 580,420", 0.5);
+    line(s, bgL, "M1380,860 C1500,820 1610,860 1640,930 C1660,980 1600,1000 1590,960 C1580,920 1650,880 1720,900", 0.9);
+    sparkles(s, bgL, [[330, 560, 44], [700, 170, 38], [1560, 330, 28], [1700, 640, 34], [440, 890, 24]], C.ink, 0.35);
+    const wrap = g(r); const cu = customer(wrap);
+    on(s, t => {
+      const e = enterUp(t, 0.05);
+      place(wrap, 860, 760 + e.y);
+      const p = easeInOut(prog(t, 0.55, 0.6));
+      const chin = [36 + 4 * Math.sin(t * 7) * (t > 1.2 ? 1 : 0), -86];
+      const tgt = lerp2([REST_R[0] - 6, REST_R[1]], chin, p);
+      cu.armR.reach(tgt[0], tgt[1], lerp(0, -170, p), 1);
+      cu.armL.reach(REST_L[0], REST_L[1], 0, -1);
+      const look = t < 1.0 ? 0 : t < 1.8 ? -6 : t < 2.6 ? 6 : 0;
+      face(cu, t, { seed: 1, lookX: look, lookY: -3, eyeX: 28, brow: easeOut(prog(t, 2.5, 0.25)), tilt: -e.v * 0.25 + (t > 1 && t < 2.6 ? -3 : 0) });
+    });
+    const b1 = bubble(r, 330, 230, "right");
+    const i1 = g(b1.content, { transform: "scale(0.95)" }); icon.radiator(i1);
+    pop(s, b1.node, 420, 250, 0.95, { float: 8 });
+    drawOn(s, i1, 1.1, 0.6);
+    const b2 = bubble(r, 330, 230);
+    const i2 = g(b2.content, { transform: "translate(-6,-10)" }); icon.tap(i2);
+    pop(s, b2.node, 1350, 230, 1.7, { float: 8, phase: 1.2 });
+    drawOn(s, i2, 1.85, 0.6);
+    const q = g(r);
+    circle(q, 0, 0, 78, C.ink, { w: 0 });
+    const qt = el("text", { x: 0, y: 6, "font-size": 92, "font-weight": 900, fill: C.gold, "text-anchor": "middle", "dominant-baseline": "middle" }, q);
+    qt.textContent = "?!";
+    pop(s, q, 1130, 430, 2.5, { rot: 14 });
+  },
 });
 
-// ================================================================ 2 · Meet Hausman (4.6 – 8.6)
-scene("meet", 4.6, 8.6, BG_GOLD, (r, s) => {
-  gridIn(s, r, 1180, 360, 360, 330, 0.2);
-  drawLine(s, r, "M300,420 C420,380 560,410 620,500", 0.3);
-  drawLine(s, r, "M260,820 C380,860 470,920 450,980 C430,1030 380,990 410,950 C450,900 560,920 640,980", 0.6);
-  sparkles(s, r, [[520, 230, 50], [380, 640, 36], [1500, 760, 32], [1680, 260, 26]], C.ink, 0.4);
-  // big speech bubble with the original Hausman logo
-  const b = bubble(r, 470, 330, bb => {
-    el("image", { href: "assets/logo.png", x: -150, y: -142, width: 300, height: 230 }, bb);
-  });
-  animNode(s, b, { x: 1400, y: 270, t0: 1.0, dur: 0.6, float: 7, period: 3.4 });
-  const tG = g(r); const tech = technician(tG, { pose: "wave" });
-  animNode(s, tG, { x: 860, y: 770, t0: 0.05, dur: 0.8, from: "up" });
-  alive(s, tech);
-  swingArm(s, tech.armR, 120, 30, 7, 0.8, 0.9);
+// ================================================================ 2 · Meet Hausman  (4.6 – 8.6)
+scene({
+  name: "meet", t0: 4.6, t1: 8.6, bg: BG.gold, enter: "wipe", wipeAt: [960, 540],
+  cam: [[0, 880, 520, 1.25], [1.1, 960, 540, 1.0, easeOut5], [2.2, 960, 540, 1.0], [3.1, 1250, 380, 1.22], [4.0, 1260, 380, 1.24]],
+  build(r, s, bgL) {
+    gridIn(s, bgL, 1180, 360, 360, 330, 0.25);
+    line(s, bgL, "M300,420 C420,380 560,410 620,500", 0.35);
+    line(s, bgL, "M260,820 C380,860 470,920 450,980 C430,1030 380,990 410,950 C450,900 560,920 640,980", 0.6);
+    sparkles(s, bgL, [[520, 230, 50], [380, 640, 36], [1500, 760, 32], [1700, 230, 26]], C.ink, 0.45);
+    const wrap = g(r); const te = technician(wrap);
+    on(s, t => {
+      const e = enterUp(t, 0.0);
+      place(wrap, 860, 770 + e.y);
+      // natural wave from the elbow, then a presenting gesture towards the logo
+      const lift = easeOut(prog(t, 0.45, 0.45));
+      const waving = t > 0.8 && t < 2.3 ? Math.sin((t - 0.8) * Math.PI * 2 * 1.6) : 0;
+      const present = easeInOut(prog(t, 2.3, 0.6));
+      const a1 = lerp(lerp(72, -28, lift), -18, present);
+      const a2 = lerp(lerp(100, -92 + 22 * waving, lift), -40, present);
+      te.armR.setAngles(a1, a2, lerp(0, 8, present));
+      te.armL.reach(REST_L[0], REST_L[1], 0, -1);
+      face(te, t, { seed: 2, lookX: t > 2.3 ? 6 : 0, lookY: t > 2.3 ? -3 : 0, happy: t > 0.6 && t < 2.4 ? 0.5 : 0, tilt: -e.v * 0.3 + (t > 2.3 ? 3 : 0) });
+    });
+    const b = bubble(r, 470, 330);
+    el("image", { href: "assets/logo.png", x: -150, y: -142, width: 300, height: 230 }, b.content);
+    pop(s, b.node, 1400, 270, 1.15, { float: 7 });
+    burst(s, r, 1400, 270, 1.35, C.ink, 10, 300);
+  },
 });
 
-// ================================================================ service scene template
-// Tech bust left/centre, a hero prop on the right with grid + dust, speech bubble with icon + word.
-function service(name, t0, t1, bg, word, iconFn, pose, hero, opt = {}) {
-  scene(name, t0, t1, bg, (r, s) => {
-    const ink = opt.dark ? C.gold : C.ink;
-    gridIn(s, r, 1230, 420, 380, 340, 0.15, ink);
-    dustIn(s, r, 1320, 860, 300, 90, 360, 3, 0.4, ink);
-    drawLine(s, r, "M220,300 C340,260 480,290 540,380", 0.3, 0.8, ink);
-    drawLine(s, r, "M180,820 C300,780 400,800 420,880 C430,930 370,940 370,900 C370,850 470,840 560,880", 0.6, 0.9, ink);
-    sparkles(s, r, opt.sparks || [[420, 200, 46], [300, 610, 34], [1760, 820, 30], [1120, 140, 26]], ink, 0.35);
-    const heroG = g(r);
-    hero(heroG, s);
-    const tG = g(r); const tech = technician(tG, { pose });
-    animNode(s, tG, { x: opt.techX || 760, y: 770, t0: 0.0, dur: 0.75, from: "up" });
-    alive(s, tech, 0.4);
-    if (opt.prop) opt.prop(tech, s);
-    const bw = word.length > 9 ? 500 : 440;
-    const b = bubble(r, bw, 210, bb => {
-      const i = g(bb, { transform: `translate(${-bw / 2 + 100},0) scale(0.75)` }); iconFn(i);
-      label(bb, word, 70 + (bw - 440) / 2, 4, word.length > 9 ? 42 : 50);
-    }, opt.bubbleTail || "left");
-    animNode(s, b, { x: opt.bubbleX || 1420, y: opt.bubbleY || 200, t0: 0.55, dur: 0.6, float: 7, period: 3.3 });
+// ================================================================ service scene template (whip-pan between services)
+function service(o) {
+  scene({
+    ...o, enter: "whip",
+    build(r, s, bgL) {
+      gridIn(s, bgL, o.gridX || 1230, o.gridY || 420, 380, 340, 0.15);
+      dustIn(s, bgL, o.dustX || 1320, o.dustY || 870, 300, 90, 360, 3, 0.4);
+      line(s, bgL, "M220,300 C340,260 480,290 540,380", 0.3, 0.8);
+      line(s, bgL, "M180,820 C300,780 400,800 420,880 C430,930 370,940 370,900 C370,850 470,840 560,880", 0.6, 0.9);
+      sparkles(s, bgL, o.sparks || [[420, 200, 46], [300, 610, 34], [1780, 820, 30], [1120, 130, 26]], C.ink, 0.35);
+      const hero = g(r);
+      const wrap = g(r); const te = technician(wrap);
+      const ctx = { te, wrap, X: o.techX || 720, Y: 770, ey: 0 };
+      o.hero(hero, s, ctx);
+      on(s, t => {
+        const e = enterUp(t, 0.0, 600, 0.85);
+        ctx.ey = e.y;
+        place(wrap, ctx.X, ctx.Y + e.y);
+        te.armL.reach(REST_L[0], REST_L[1], 0, -1);
+        o.pose(t, te, ctx);
+        face(te, t, { seed: o.seed || 0, lookX: 6, lookY: o.lookY || 0, tilt: -e.v * 0.3 + (o.tilt ?? 2), happy: o.happy ? o.happy(t) : 0 });
+      });
+      const bw = o.word.length > 9 ? 500 : 440;
+      const b = bubble(r, bw, 210, o.tail || "left");
+      const ic = g(b.content, { transform: `translate(${-bw / 2 + 100},0) scale(0.75)` }); o.icon(ic);
+      textReveal(s, b.content, o.word, 70 + (bw - 440) / 2, 4, 0.95, { size: o.word.length > 9 ? 42 : 50 });
+      pop(s, b.node, o.bubbleX || 1420, o.bubbleY || 200, 0.55, { float: 7 });
+      drawOn(s, ic, 0.7, 0.6);
+    },
   });
 }
 
 // ================================================================ 3 · Badezimmer (8.6 – 12.6)
-service("bad", 8.6, 12.6, BG_PALE, "Badezimmer", icon.shower, "tool", (r, s) => {
-  // stacked tiles (like the coin stack in the reference) + rain shower
-  const stack = g(r);
-  for (let i = 0; i < 6; i++) {
-    const row = g(stack);
-    rrect(row, -150, -60 * i - 50, 300, 50, 10, i % 2 ? C.white : C.ink, { w: 4 });
-    P(row, `M-50,${-60 * i - 50} V${-60 * i} M50,${-60 * i - 50} V${-60 * i}`, "none", { w: 3.5, stroke: i % 2 ? C.ink : C.gold });
-    animNode(s, row, { x: 0, y: 0, t0: 0.3 + i * 0.09, dur: 0.45, from: "pop" });
-  }
-  animNode(s, stack, { x: 1430, y: 900, t0: 0.25, dur: 0.01 });
-  const sh = g(r);
-  P(sh, "M0,0 V-280 C0,-320 20,-340 60,-340 H170 C200,-340 215,-325 215,-295 V-270", "none", { w: 12 });
-  P(sh, "M140,-262 C175,-310 255,-310 290,-262 Z", C.ink, { w: 4 });
-  const drops = [];
-  for (let i = 0; i < 7; i++) drops.push(P(sh, `M${165 + i * 18},-240 l-4,22`, "none", { w: 6, stroke: C.goldDeep }));
-  on(s, t => drops.forEach((d, i) => { const c = (t * 1.3 + i * 0.17) % 1; d.setAttribute("transform", `translate(${-c * 12},${c * 170})`); d.setAttribute("opacity", t > 1.0 ? 1 - c : 0); }));
-  sh.setAttribute("transform", "scale(-1,1)"); const shW = g(r); shW.appendChild(sh);
-  animNode(s, shW, { x: 1790, y: 560, t0: 0.6, dur: 0.6 });
-}, { prop: (tech, s) => {
-  // wrench in the gripping hand
-  const w = g(tech.handR, { transform: "translate(4,-70)" });
-  P(w, "M-9,0 H9 V-120 H-9 Z", C.white, { w: 4 });
-  P(w, "M-26,-128 C-30,-160 -10,-178 0,-178 L0,-150 L14,-150 L14,-178 C30,-170 34,-140 24,-122 Z", C.white, { w: 4 });
-  swingArm(s, tech.armR, 120, 30, 5, 1.1, 0.8);
-}, techX: 700, bubbleX: 1150, bubbleY: 170 });
+service({
+  name: "bad", t0: 8.6, t1: 12.6, bg: BG.pale, word: "Badezimmer", icon: icon.shower, seed: 3,
+  bubbleX: 1150, bubbleY: 170, techX: 700,
+  cam: [[0, 960, 540, 1.0], [1.4, 980, 560, 1.03], [1.9, 1150, 480, 1.22, easeOut5], [3.0, 1160, 480, 1.25], [3.6, 1020, 560, 1.05]],
+  hero(r, s) {
+    const stack = g(r);
+    for (let i = 0; i < 6; i++) {
+      const row = g(stack);
+      rrect(row, -150, -50, 300, 50, 10, i % 2 ? C.white : C.ink, { w: 4 });
+      P(row, "M-50,-50 V0 M50,-50 V0", "none", { w: 3.5, stroke: i % 2 ? C.ink : C.gold });
+      on(s, t => {
+        const t0 = 0.35 + i * 0.16, p = prog(t, t0, 0.32);
+        const y = -60 * i - lerp(520, 0, easeIn(p));
+        const land = t - t0 - 0.32;
+        const sq = land > 0 && land < 0.25 ? 1 - 0.12 * Math.sin(Math.PI * land / 0.25) : 1;
+        row.setAttribute("transform", `translate(0,${y}) scale(${2 - sq},${sq})`);
+        row.setAttribute("opacity", t > t0 ? 1 : 0);
+      });
+    }
+    stack.setAttribute("transform", "translate(1430,900)");
+    const sh = g(r);
+    const shIn = g(sh, { transform: "scale(-1,1)" });
+    P(shIn, "M0,0 V-280 C0,-320 20,-340 60,-340 H170 C200,-340 215,-325 215,-295 V-270", "none", { w: 12 });
+    P(shIn, "M140,-262 C175,-310 255,-310 290,-262 Z", C.ink, { w: 4 });
+    const drops = [];
+    for (let i = 0; i < 7; i++) drops.push(P(shIn, `M${165 + i * 18},-240 l-4,22`, "none", { w: 6, stroke: C.goldDeep }));
+    on(s, t => drops.forEach((d, i) => { const c = (t * 1.3 + i * 0.17) % 1; d.setAttribute("transform", `translate(${-c * 12},${c * 170})`); d.setAttribute("opacity", t > 1.3 ? 1 - c : 0); }));
+    pop(s, sh, 1790, 560, 1.0);
+  },
+  pose(t, te) {
+    if (!te._wrench) {
+      te.armR.setHand(handGrip);
+      const w = g(te.armR.extra, { transform: "translate(4,-50)" });
+      P(w, "M-8,0 H8 V-115 H-8 Z", C.white, { w: 4 });
+      P(w, "M-24,-122 C-28,-152 -10,-170 0,-170 L0,-144 L13,-144 L13,-170 C28,-162 32,-134 22,-118 Z", C.white, { w: 4 });
+      te._wrench = true;
+    }
+    const reach = easeInOut(prog(t, 0.6, 0.6));
+    const ratchet = t > 1.2 ? Math.sin((t - 1.2) * Math.PI * 2 * 1.4) : 0;
+    const tgt = lerp2(REST_R, [285 + 10 * ratchet, 40 + 10 * ratchet], reach);
+    te.armR.reach(tgt[0], tgt[1], lerp(0, -40 + 22 * ratchet, reach), -1);
+  },
+});
 
 // ================================================================ 4 · Heizung (12.6 – 16.6)
-service("heizung", 12.6, 16.6, BG_GOLD, "Heizung", icon.flame, "tablet", (r, s) => {
-  // radiator with heat waves
-  const rad = g(r);
-  rrect(rad, -220, -170, 440, 300, 22, C.white, { w: 4.5 });
-  for (let i = 1; i < 8; i++) P(rad, `M${-220 + i * 55},-145 V105`, "none", { w: 4.5 });
-  P(rad, "M-170,130 v40 M170,130 v40 M-220,-120 h-50 v-50", "none", { w: 7 });
-  circle(rad, -270, -190, 26, C.ink, { w: 0 });
-  animNode(s, rad, { x: 1420, y: 720, t0: 0.3, dur: 0.6 });
-  const waves = [];
-  for (let i = 0; i < 4; i++) {
-    const x = 1300 + i * 80;
-    waves.push(P(r, `M${x},520 C${x + 22},490 ${x - 22},460 ${x},430 C${x + 22},400 ${x - 22},370 ${x},340`, "none", { w: 6 }));
-  }
-  on(s, t => waves.forEach((w, i) => { const c = (t * 0.55 + i * 0.25) % 1; w.setAttribute("transform", `translate(0,${-50 * c})`); w.setAttribute("opacity", t > 0.9 ? Math.sin(Math.PI * c) : 0); }));
-}, { prop: (tech, s) => {
-  // smart thermostat / tablet in hand, temperature counting up (like the calculator in the reference)
-  const tb = g(tech.root, { transform: "translate(70,120) rotate(-6)" });
-  rrect(tb, -95, -135, 190, 270, 18, C.white, { w: 4.5 });
-  rrect(tb, -72, -110, 144, 90, 8, C.ink, { w: 0 });
-  const tt = label(tb, "18°", 0, -63, 58, C.gold);
-  for (let rI = 0; rI < 3; rI++) for (let cI = 0; cI < 3; cI++) rrect(tb, -70 + cI * 52, 10 + rI * 38, 36, 24, 6, C.ink, { w: 0 });
-  on(s, t => { tt.textContent = Math.round(lerp(18, 22, easeInOut(clamp((t - 0.8) / 1.6)))) + "°"; });
-  // re-attach the open hand in front of the tablet
-  const h = g(tech.root, { transform: "translate(110,240) rotate(-150)" });
-  Art.handOpen(h);
-}, techX: 720, bubbleX: 1380 });
+service({
+  name: "heizung", t0: 12.6, t1: 16.6, bg: BG.gold, word: "Heizung", icon: icon.flame, seed: 4,
+  techX: 720, bubbleX: 1380,
+  // punch-in on the thermostat while it counts up, then reveal the radiator warming up
+  cam: [[0, 960, 540, 1.0], [1.0, 940, 560, 1.02], [1.45, 820, 760, 1.55, easeOut5], [2.5, 830, 760, 1.6], [3.1, 1100, 560, 1.06, expoInOut], [4.0, 1110, 560, 1.08]],
+  hero(r, s, ctx) {
+    const rad = g(r);
+    rrect(rad, -220, -170, 440, 300, 22, C.white, { w: 4.5 });
+    const fins = [];
+    for (let i = 1; i < 8; i++) {
+      fins.push(rrect(rad, -220 + i * 55 - 14, -145, 28, 250, 12, C.gold, { w: 0 }));
+      P(rad, `M${-220 + i * 55},-145 V105`, "none", { w: 4.5 });
+    }
+    on(s, t => fins.forEach((f, i) => f.setAttribute("opacity", easeOut(prog(t, 2.6 + i * 0.07, 0.3)) * 0.9)));
+    P(rad, "M-170,130 v40 M170,130 v40 M-220,-120 h-50 v-50", "none", { w: 7 });
+    circle(rad, -270, -190, 26, C.ink, { w: 0 });
+    pop(s, rad, 1420, 720, 0.3);
+    const waves = [];
+    for (let i = 0; i < 4; i++) {
+      const x = 1300 + i * 80;
+      waves.push(P(r, `M${x},520 C${x + 22},490 ${x - 22},460 ${x},430 C${x + 22},400 ${x - 22},370 ${x},340`, "none", { w: 6 }));
+    }
+    on(s, t => waves.forEach((w, i) => { const c = (t * 0.6 + i * 0.25) % 1; w.setAttribute("transform", `translate(0,${-60 * c})`); w.setAttribute("opacity", t > 2.7 ? Math.sin(Math.PI * c) : 0); }));
+    // thermostat held in the hand (lives in the character's space, follows the wrist)
+    const tb = g(ctx.wrap);
+    rrect(tb, -95, -135, 190, 270, 18, C.white, { w: 4.5 });
+    rrect(tb, -72, -110, 144, 90, 8, C.ink, { w: 0 });
+    const tt = el("text", { x: 0, y: -60, "font-size": 58, "font-weight": 800, fill: C.gold, "text-anchor": "middle", "dominant-baseline": "middle" }, tb);
+    for (let ri = 0; ri < 3; ri++) for (let ci = 0; ci < 3; ci++) rrect(tb, -70 + ci * 52, 10 + ri * 38, 36, 24, 6, C.ink, { w: 0 });
+    const ring = circle(tb, 0, -65, 60, "none", { stroke: C.gold, w: 3 });
+    ctx.tablet = tb;
+    on(s, t => {
+      tt.textContent = Math.round(lerp(18, 22, easeInOut(prog(t, 1.4, 1.0)))) + "°";
+      const pulse = prog(t, 2.4, 0.5);
+      ring.setAttribute("opacity", pulse > 0 && pulse < 1 ? 1 - pulse : 0);
+      ring.setAttribute("r", 50 + 60 * pulse);
+    });
+  },
+  pose(t, te, ctx) {
+    const p = easeOut5(prog(t, 0.35, 0.7));
+    if (!te._grip) { te.armR.setHand(handGrip); te._grip = true; }
+    const tgt = lerp2(REST_R, [95, 250], p);
+    te.armR.reach(tgt[0], tgt[1], lerp(0, -10, p), 1);
+    const [wx, wy] = te.armR.wrist;
+    ctx.tablet.setAttribute("transform", `translate(${wx - 20},${wy - 150}) rotate(${-6 + 2 * Math.sin(t * 2)})`);
+    ctx.wrap.appendChild(ctx.tablet);   // held from behind: thermostat in front of the hand
+  },
+  happy: t => t > 2.5 ? 0.5 : 0,
+});
 
 // ================================================================ 5 · Klima (16.6 – 20.6)
-service("klima", 16.6, 20.6, BG_GREY, "Klima", icon.snow, "point", (r, s) => {
-  // indoor split unit
-  const ac = g(r);
-  rrect(ac, -260, -75, 520, 150, 34, C.white, { w: 4.5 });
-  P(ac, "M-220,30 H220 M-200,52 H200", "none", { w: 5 });
-  rrect(ac, 150, -45, 80, 26, 8, C.gold, { w: 3.5 });
-  animNode(s, ac, { x: 1420, y: 470, t0: 0.3, dur: 0.6 });
-  const air = [];
-  for (let i = 0; i < 3; i++) {
-    const y = 580 + i * 70;
-    air.push(P(r, `M1220,${y} C1320,${y + 40} 1460,${y - 40} 1640,${y + 20}`, "none", { w: 6, stroke: C.ink }));
-  }
-  on(s, t => air.forEach((a, i) => { const c = (t * 0.6 + i * 0.33) % 1; a.setAttribute("transform", `translate(${-40 * c},${70 * c})`); a.setAttribute("opacity", t > 0.9 ? Math.sin(Math.PI * c) : 0); }));
-  [[1260, 860, 0.45], [1500, 820, 0.35], [1700, 900, 0.4]].forEach(([x, y, k], i) => {
-    const f = g(r); const inner = g(f, { transform: `scale(${k})` });
-    const sn = g(inner); icon.snow(sn);
-    sn.querySelectorAll("path").forEach(p => p.setAttribute("stroke", C.gold));
-    on(s, t => { const p = clamp((t - 1.0 - i * 0.2) / 0.5); f.setAttribute("transform", `translate(${x},${y + 8 * Math.sin(t * 2 + i)}) rotate(${t * 30 * (i % 2 ? 1 : -1)}) scale(${p <= 0 ? 0 : back(p)})`); });
-  });
-}, { techX: 700, bubbleX: 1380, bubbleY: 210, sparks: [[420, 200, 46], [300, 610, 34], [1800, 640, 26], [1120, 140, 26]] });
+service({
+  name: "klima", t0: 16.6, t1: 20.6, bg: BG.grey, word: "Klima", icon: icon.snow, seed: 5,
+  techX: 700, bubbleX: 1380, bubbleY: 205, gridY: 300, lookY: -5, tilt: 4,
+  cam: [[0, 900, 600, 1.0], [0.9, 920, 590, 1.02], [2.0, 1330, 470, 1.32, expoInOut], [3.2, 1340, 470, 1.36], [4.0, 1200, 520, 1.12]],
+  hero(r, s) {
+    const ac = g(r);
+    rrect(ac, -260, -75, 520, 150, 34, C.white, { w: 4.5 });
+    const flap = P(ac, "M-220,40 H220", "none", { w: 6 });
+    P(ac, "M-200,58 H200", "none", { w: 4 });
+    const led = rrect(ac, 150, -45, 80, 26, 8, C.white, { w: 3.5 });
+    on(s, t => {
+      led.setAttribute("fill", t > 1.6 ? C.gold : C.white);
+      flap.setAttribute("transform", `translate(0,${10 * easeOut(prog(t, 1.6, 0.4))})`);
+    });
+    pop(s, ac, 1420, 470, 0.3);
+    const air = [];
+    for (let i = 0; i < 4; i++) {
+      const y = 580 + i * 62;
+      air.push(P(r, `M1200,${y} C1300,${y + 40} 1460,${y - 40} 1650,${y + 20}`, "none", { w: 5.5 }));
+    }
+    on(s, t => air.forEach((a, i) => { const c = (t * 0.6 + i * 0.25) % 1; a.setAttribute("transform", `translate(${-30 * c},${80 * c})`); a.setAttribute("opacity", t > 1.7 ? Math.sin(Math.PI * c) : 0); }));
+    [[1260, 860, 0.45], [1500, 820, 0.35], [1700, 900, 0.4], [1380, 960, 0.28]].forEach(([x, y, k], i) => {
+      const f = g(r); const sn = g(f, { transform: `scale(${k})` }); icon.snow(sn, C.goldDeep);
+      on(s, t => {
+        const p = t - 1.9 - i * 0.18;
+        f.setAttribute("transform", `translate(${x + 10 * Math.sin(t * 1.5 + i)},${y + 14 * Math.sin(t * 2 + i)}) rotate(${t * 40 * (i % 2 ? 1 : -1)}) scale(${p <= 0 ? 0 : spring(p / 0.6)})`);
+      });
+    });
+  },
+  pose(t, te) {
+    if (!te._point) { te.armR.setHand(handPoint); te._point = true; }
+    const p = easeInOut(prog(t, 0.7, 0.8));
+    const tap = t > 1.5 && t < 2.1 ? Math.sin((t - 1.5) * Math.PI * 2 / 0.3) * 6 : 0;
+    const tgt = lerp2(REST_R, [295 + tap, -150 - tap], p);
+    te.armR.reach(tgt[0], tgt[1], lerp(0, 15, p), 1);
+  },
+});
 
 // ================================================================ 6 · Innenausbau (20.6 – 24.6)
-service("innen", 20.6, 24.6, BG_CREAM, "Innenausbau", icon.roller, "tool", (r, s) => {
-  // wall being painted in stripes + stacked floor planks
-  const wall = g(r);
-  rrect(wall, -260, -240, 520, 400, 10, C.white, { w: 4.5 });
-  for (let i = 0; i < 4; i++) {
-    const stripe = rrect(wall, -250 + i * 125, -230, 125, 0, 0, C.gold, { w: 0 });
-    on(s, t => stripe.setAttribute("height", 380 * easeInOut(clamp((t - 0.6 - i * 0.35) / 0.5))));
-  }
-  P(wall, "M-260,-240 H260 V160 H-260 Z", "none", { w: 4.5 });
-  animNode(s, wall, { x: 1430, y: 590, t0: 0.25, dur: 0.6 });
-  const planks = g(r);
-  for (let i = 0; i < 4; i++) {
-    const pl = g(planks);
-    rrect(pl, -200, -36 * i - 32, 400, 32, 8, i % 2 ? C.ink : "#C98B54", { w: 4 });
-    P(pl, `M-60,${-36 * i - 32} V${-36 * i} M90,${-36 * i - 32} V${-36 * i}`, "none", { w: 3, stroke: i % 2 ? C.gold : C.ink });
-    animNode(s, pl, { x: 0, y: 0, t0: 1.6 + i * 0.12, dur: 0.4, from: "right" });
-  }
-  animNode(s, planks, { x: 1430, y: 905, t0: 0, dur: 0.01 });
-}, { prop: (tech, s) => {
-  const ro = g(tech.handR, { transform: "translate(0,-60)" });
-  P(ro, "M-12,0 H12 V-90 H-12 Z", C.ink, { w: 3 });
-  P(ro, "M0,-90 V-150 H90 V-175", "none", { w: 7 });
-  rrect(ro, 20, -230, 150, 56, 16, C.gold, { w: 4 });
-  swingArm(s, tech.armR, 120, 30, 6, 0.9, 0.6);
-}, techX: 700 });
+service({
+  name: "innen", t0: 20.6, t1: 24.6, bg: BG.cream, word: "Innenausbau", icon: icon.roller, seed: 6,
+  techX: 760, bubbleX: 1420, bubbleY: 200, gridY: 330,
+  cam: [[0, 960, 540, 1.0], [0.8, 1000, 550, 1.05], [3.2, 1260, 540, 1.12, easeInOut], [4.0, 1270, 540, 1.13]],
+  hero(r, s, ctx) {
+    const WX = 1460, WY = 610, W = 520, H = 400;
+    const wall = g(r);
+    rrect(wall, -W / 2, -H / 2, W, H, 10, C.white, { w: 4.5 });
+    const stripes = [];
+    for (let i = 0; i < 4; i++) stripes.push(rrect(wall, -W / 2 + 8 + i * 126, -H / 2 + 8, 126, 0, 0, C.gold, { w: 0 }));
+    P(wall, `M${-W / 2},${-H / 2} H${W / 2} V${H / 2} H${-W / 2} Z`, "none", { w: 4.5 });
+    pop(s, wall, WX, WY, 0.2);
+    const planks = g(r);
+    for (let i = 0; i < 4; i++) {
+      const pl = g(planks);
+      rrect(pl, -200, -36 * i - 32, 400, 32, 8, i % 2 ? C.ink : "#C98B54", { w: 4 });
+      P(pl, `M-60,${-36 * i - 32} V${-36 * i} M90,${-36 * i - 32} V${-36 * i}`, "none", { w: 3, stroke: i % 2 ? C.gold : C.ink });
+      on(s, t => { const p = easeOut5(prog(t, 2.6 + i * 0.1, 0.45)); pl.setAttribute("transform", `translate(${(1 - p) * 700},0)`); pl.setAttribute("opacity", p > 0 ? 1 : 0); });
+    }
+    planks.setAttribute("transform", "translate(1460,965)");
+    // roller head position (world) — paints each stripe from top to bottom, then hops to the next one
+    const T0 = 0.8, PER = 0.62;
+    ctx.roller = t => {
+      const k = (t - T0) / PER, i = clamp(Math.floor(k), 0, 3), f = clamp(k - i, 0, 1);
+      const x0 = WX - W / 2 + 8 + i * 126 + 63;
+      const paint = easeInOut(clamp(f / 0.8));
+      const ret = easeInOut(clamp((f - 0.8) / 0.2));
+      let x = x0, y = WY - H / 2 + 34;
+      if (k >= 0 && k < 4) {
+        y = lerp(lerp(WY - H / 2 + 34, WY + H / 2 - 34, paint), WY - H / 2 + 34, ret);
+        if (i < 3) x = lerp(x0, x0 + 126, ret);
+      } else if (k >= 4) { x = WX + W / 2 - 71; }
+      stripes.forEach((st, j) => {
+        const done = k >= 4 || j < i ? 1 : j === i && k >= 0 ? paint : 0;
+        st.setAttribute("height", (H - 16) * done);
+      });
+      return [x, y];
+    };
+    ctx.pole = P(ctx.wrap, "", "none", { w: 8 });
+    ctx.head = g(ctx.wrap);
+    rrect(ctx.head, -62, -24, 124, 48, 16, C.gold, { w: 4 });
+    P(ctx.head, "M62,0 H78 V40", "none", { w: 7 });
+  },
+  pose(t, te, ctx) {
+    if (!te._grip) { te.armR.setHand(handGrip); te._grip = true; }
+    const [rx, ry] = ctx.roller(t);
+    const lx = rx - ctx.X, ly = ry - (ctx.Y + ctx.ey);        // world → character space
+    const sx = 104, sy = 30;
+    const dir = Math.atan2(ly - sy, lx - sx), reach = Math.min(Math.hypot(lx - sx, ly - sy) - 60, 260);
+    const intro = easeInOut(prog(t, 0.35, 0.45));
+    const tgt = lerp2(REST_R, [sx + Math.cos(dir) * reach, sy + Math.sin(dir) * reach], intro);
+    te.armR.reach(tgt[0], tgt[1], 0, 1);
+    const [wx, wy] = te.armR.wrist;
+    const gx = wx + Math.cos(dir) * 26, gy = wy + Math.sin(dir) * 26;
+    const hx = lerp(gx + 120, lx, intro), hy = lerp(gy - 40, ly, intro);
+    ctx.pole.setAttribute("d", `M${gx.toFixed(1)},${gy.toFixed(1)} L${(hx + 78).toFixed(1)},${(hy + 40).toFixed(1)}`);
+    ctx.head.setAttribute("transform", `translate(${hx.toFixed(1)},${hy.toFixed(1)})`);
+    ctx.wrap.appendChild(ctx.pole); ctx.wrap.appendChild(ctx.head);
+    ctx.wrap.appendChild(te.armR.grp);
+  },
+});
 
 // ================================================================ 7 · Alles aus einer Hand (24.6 – 27.6)
-scene("together", 24.6, 27.6, BG_GOLD, (r, s) => {
-  gridIn(s, r, 840, 120, 300, 260, 0.2);
-  sparkles(s, r, [[300, 220, 46], [1640, 200, 40], [220, 700, 30], [1720, 720, 30], [960, 470, 26]], C.ink, 0.4);
-  drawLine(s, r, "M560,180 C680,140 820,170 880,260", 0.4);
-  const tG = g(r); const tech = technician(tG, { pose: "present" });
-  animNode(s, tG, { x: 620, y: 790, t0: 0.0, dur: 0.75, from: "left" });
-  const cG = g(r); const cust = customer(cG, { pose: "present" });
-  cust.root.setAttribute("transform", "scale(-1,1)");
-  animNode(s, cG, { x: 1300, y: 790, t0: 0.1, dur: 0.75, from: "right" });
-  alive(s, tech); alive(s, cust, 1);
-  // four service icons orbit into a speech bubble between them
-  const b = bubble(r, 520, 300, bb => {
-    const items = [icon.flame, icon.snow, icon.shower, icon.roller];
-    items.forEach((fn, i) => {
-      const x = -180 + i * 120;
-      const holder = g(bb);
-      const ii = g(holder, { transform: "scale(0.45)" }); fn(ii);
-      on(s, t => { const p = clamp((t - 0.9 - i * 0.15) / 0.45); holder.setAttribute("transform", `translate(${x},-40) scale(${p <= 0 ? 0 : back(p)})`); });
+scene({
+  name: "together", t0: 24.6, t1: 27.6, bg: BG.gold, enter: "wipe", wipeAt: [960, 840],
+  // wide → punch-in the moment the hands meet → dive into the handshake
+  cam: [[0, 960, 520, 1.02], [1.25, 960, 520, 1.0], [1.55, 960, 660, 1.2, easeOut5], [2.45, 960, 670, 1.23], [3.0, 960, 830, 22, expoIn]],
+  build(r, s, bgL) {
+    gridIn(s, bgL, 830, 110, 300, 260, 0.2);
+    sparkles(s, bgL, [[300, 220, 46], [1640, 200, 40], [220, 700, 30], [1720, 720, 30]], C.ink, 0.3);
+    line(s, bgL, "M560,170 C680,130 820,160 880,250", 0.35);
+    const CL = [960, 835];
+    const tw = g(r), te = technician(tw);
+    const cw = g(r), cu = customer(cw);
+    const hs = g(r); const hsInner = g(hs, { transform: "scale(1.35)" }); handshake(hsInner);
+    on(s, t => {
+      const ent = easeOut5(prog(t, 0.0, 0.8));
+      const TX = lerp(-200, 650, ent), CX = lerp(2120, 1270, ent), Y = 790;
+      place(tw, TX, Y); place(cw, CX, Y, 1, true);
+      const reach = easeInOut(prog(t, 0.7, 0.55));
+      const contact = t >= 1.25;
+      const shake = contact ? 16 * Math.exp(-(t - 1.25) * 2.2) * Math.sin((t - 1.25) * Math.PI * 2 * 2.6) : 0;
+      const cx = CL[0], cy = CL[1] + shake;
+      const tLoc = lerp2(REST_R, [cx - TX - 60, cy - Y], reach);
+      const cLoc = lerp2(REST_R, [CX - cx - 60, cy - Y], reach);
+      te.armR.handVisible = cu.armR.handVisible = !contact;
+      te.armR.reach(tLoc[0], tLoc[1], lerp(0, 90, reach), -1);
+      cu.armR.reach(cLoc[0], cLoc[1], lerp(0, 90, reach), -1);
+      te.armL.reach(REST_L[0], REST_L[1], 0, -1); cu.armL.reach(REST_L[0], REST_L[1], 0, -1);
+      hs.setAttribute("transform", `translate(${cx},${cy})`);
+      hs.setAttribute("opacity", contact ? 1 : 0);
+      const happy = contact ? 0.6 : 0;
+      face(te, t, { seed: 7, lookX: 6, happy, tilt: 3 });
+      face(cu, t, { seed: 8, lookX: 6, happy, eyeX: 28, tilt: 3 });
     });
-    label(bb, "Alles aus einer Hand", 0, 85, 40);
-  });
-  animNode(s, b, { x: 960, y: 250, t0: 0.6, dur: 0.6, float: 6, period: 3.2 });
+    burst(s, r, CL[0], CL[1], 1.3, C.ink, 10, 170);
+    const b = bubble(r, 560, 260);
+    [icon.flame, icon.snow, icon.shower, icon.roller].forEach((fn, i) => {
+      const holder = g(b.content); const ii = g(holder, { transform: "scale(0.45)" }); fn(ii);
+      pop(s, holder, -195 + i * 130, -30, 0.75 + i * 0.12);
+    });
+    textReveal(s, b.content, "Alles aus einer Hand", 0, 75, 1.2, { size: 42 });
+    pop(s, b.node, 960, 345, 0.45, { float: 6 });
+  },
 });
 
 // ================================================================ 8 · End card (27.6 – 30)
-scene("end", 27.6, 30.01, BG_DARK, (r, s) => {
-  gridIn(s, r, 1380, 140, 340, 300, 0.3, C.gold);
-  gridIn(s, r, 200, 640, 300, 260, 0.45, C.gold);
-  sparkles(s, r, [[360, 260, 44], [1580, 760, 38], [1720, 520, 24], [260, 520, 22]], C.gold, 0.3);
-  dustIn(s, r, 960, 900, 420, 60, 300, 5, 0.6, C.gold);
-  const logo = g(r);
-  el("image", { href: "assets/logo-on-dark.png", x: -325, y: -250, width: 650, height: 500 }, logo);
-  animNode(s, logo, { x: 960, y: 430, t0: 0.15, dur: 0.75 });
-  const web = label(r, "www.hausman.lu", 960, 860, 64, C.white);
-  on(s, t => web.setAttribute("opacity", easeOut(clamp((t - 0.9) / 0.5))));
-  const sub = label(r, "HEIZUNG  ·  KLIMA  ·  BADEZIMMER  ·  INNENAUSBAU", 960, 950, 30, C.gold);
-  sub.setAttribute("letter-spacing", 4);
-  on(s, t => sub.setAttribute("opacity", easeOut(clamp((t - 1.2) / 0.5))));
+scene({
+  name: "end", t0: 27.6, t1: 30.01, bg: BG.dark, enter: "wipe", wipeAt: [960, 540],
+  cam: [[0, 960, 520, 1.25], [1.6, 960, 540, 1.0, easeOut5], [2.4, 960, 540, 0.985]],
+  build(r, s, bgL) {
+    gridIn(s, bgL, 1400, 130, 330, 300, 0.35, C.gold);
+    gridIn(s, bgL, 190, 650, 300, 260, 0.5, C.gold);
+    sparkles(s, bgL, [[360, 260, 44], [1580, 780, 38], [1720, 520, 24], [260, 520, 22]], C.gold, 0.4);
+    dustIn(s, bgL, 960, 905, 420, 60, 300, 5, 0.7, C.gold);
+    const ring = circle(r, 960, 400, 290, "none", { stroke: C.gold, w: 3 });
+    const len = 2 * Math.PI * 290;
+    ring.style.strokeDasharray = `${len} ${len}`;
+    on(s, t => { const p = expoInOut(prog(t, 0.05, 0.9)); ring.style.strokeDashoffset = len * (1 - p); ring.setAttribute("opacity", 1 - easeOut(prog(t, 0.9, 0.4))); });
+    const logo = g(r);
+    el("image", { href: "assets/logo-on-dark.png", x: -325, y: -250, width: 650, height: 500 }, logo);
+    pop(s, logo, 960, 420, 0.25, { dur: 0.9 });
+    textReveal(s, r, "www.hausman.lu", 960, 845, 0.85, { size: 64, fill: C.white });
+    textReveal(s, r, "HEIZUNG  ·  KLIMA  ·  BADEZIMMER  ·  INNENAUSBAU", 960, 935, 1.1, { size: 28, fill: C.gold, ls: 4 });
+  },
 });
 
-// ---------------------------------------------------------------- renderer
-const TRANS = 0.55;
+// ================================================================ renderer
+const WHIP = 0.42, WIPE = 0.6;
 function render(t) {
   scenes.forEach((s, i) => {
     const next = scenes[i + 1];
-    // visible from its own start until the next scene's wipe has fully covered it
-    const active = t >= s.t0 - 1e-3 && (!next || t < next.t0 + TRANS);
+    const nextDur = next ? (next.enter === "whip" ? WHIP : next.enter === "wipe" ? WIPE : 0) : 0;
+    const active = t >= s.t0 - 1e-3 && (!next || t < next.t0 + nextDur);
     s.root.setAttribute("display", active ? "inline" : "none");
     if (!active) return;
-    const p = i === 0 ? 1 : easeInOut(clamp((t - s.t0) / TRANS));
-    s.wipe.setAttribute("r", p >= 1 ? 2400 : 2300 * p);
-    for (const fn of s.anims) fn(t - s.t0);
+    const lt = t - s.t0;
+    let x = 0, blur = 0;
+    if (s.enter === "whip" && lt < WHIP) {
+      const q = clamp(lt / WHIP);
+      x += 1920 * (1 - expoInOut(q)); blur = Math.max(blur, 70 * Math.sin(Math.PI * q));
+    }
+    if (s.enter === "wipe") {
+      const p = expoInOut(lt / WIPE);
+      const [wx, wy] = s.wipeAt || [960, 540];
+      s.wipe.setAttribute("cx", wx); s.wipe.setAttribute("cy", wy);
+      s.wipe.setAttribute("r", p >= 1 ? 2600 : 2400 * p);
+    }
+    if (next && next.enter === "whip" && t >= next.t0) {
+      const q = clamp((t - next.t0) / WHIP);
+      x -= 1920 * expoInOut(q); blur = Math.max(blur, 70 * Math.sin(Math.PI * q));
+    }
+    s.root.setAttribute("transform", `translate(${x.toFixed(1)},0)`);
+    s.blur.setAttribute("stdDeviation", `${blur.toFixed(1)} 0`);
+    if (blur > 0.5) s.root.setAttribute("filter", `url(#blur${i})`); else s.root.removeAttribute("filter");
+    const [cx, cy, z] = kf(lt, s.camKeys);
+    s.camG.setAttribute("transform", `translate(960,540) scale(${z.toFixed(4)}) translate(${(-cx).toFixed(1)},${(-cy).toFixed(1)})`);
+    // background decoration lags the camera zoom slightly (parallax depth)
+    const pz = Math.pow(z, -0.12);
+    s.layerBack.setAttribute("transform", `translate(${cx},${cy}) scale(${pz.toFixed(4)}) translate(${-cx},${-cy})`);
+    for (const fn of s.anims) fn(lt);
   });
 }
 window.setTime = render;
