@@ -1,24 +1,25 @@
-# Hausman.lu – Erklärvideo (30 s) – Skript-Entwurf
+# Hausman.lu – Erklärvideo (30 s, 16:9, 1920×1080)
 
-**Stil:** Flat Illustration (schwarze Konturen, kräftige Farbflächen, Funkel-Sterne, Gitter- und Punkt-Texturen). Keine Hand.
-**Farben:** Hausman-Gold #E8C85E (Hintergrund), Anthrazit/Schwarz (Arbeitskleidung), Akzente: Rot = Heizung, Blau = Klima, Türkis = Bad, Weiß/Grau = Renovierung.
-**Hauptfigur:** Hausman-Techniker in schwarzer Arbeitskleidung mit goldenem Logo.
+**Stil:** Flat Illustration nach Referenz (weiße Figuren mit feinen Konturen, Sprechblasen mit Punkt-Schatten,
+Funkel-Sterne, Gitter-Flächen, feine Schwung-Linien). Farben: Hausman-Gold, Schwarz, Creme.
+**Ton:** Kein Sprecher im Video – Voiceover + Musik werden von euch darübergelegt.
+**Wichtig:** Hausman macht Heizung, Klima, Badezimmer, Innenausbau – **keine Fassade, keine Fenster** (kommt im Video nicht vor).
 
-| Zeit | Bild | Sprecher | Text im Bild |
-|---|---|---|---|
-| 0–4 s | Kundin vor ihrem Haus, zwei Gedankenblasen: Heizkörper / Wasserhahn, „?!" | „Hausman? Das sind doch die mit der Heizung!" – „Nee, die machen Sanitär!" | – |
-| 4–7 s | Hausman-Techniker springt ins Bild, Blasen platzen, Sterne funkeln | „Stimmt beides – aber das ist längst nicht alles." | Viel mehr! |
-| 7–10 s | Techniker neben Wärmepumpe, rote Wärmewellen | „Moderne Heizungen und Wärmepumpen," | Heizung |
-| 10–13 s | Klimagerät an der Wand, blaue Luftwirbel, Schneeflocken | „Klimaanlagen für angenehme Sommer," | Klima |
-| 13–17 s | Bad baut sich auf: Fliesen-Gitter, Regendusche, Waschtisch | „Badezimmer von der Planung bis zur letzten Fliese" | Badezimmer |
-| 17–20 s | Techniker rollt Farbe an die Wand, Boden & Licht erscheinen | „und die komplette Innenrenovierung." | Innenrenovierung |
-| 20–25 s | Zoom-out: Haus im Querschnitt, alle vier Räume leuchten auf, Handschlag | „Alles aus einer Hand – ein Ansprechpartner für Ihr ganzes Zuhause." | Alles aus einer Hand |
-| 25–30 s | Gold-Hintergrund, Logo baut sich auf, „d'ass alles dran" + Website | „Hausman.lu – d'ass alles dran." | hausman.lu · Heizung · Klima · Bad · Renovierung |
+## Szenen & Zeitmarken (für das Voiceover)
 
-## Offene Fragen
-1. Sprache: Deutsch / Luxemburgisch / Französisch?
-2. Sprecherstimme oder nur Musik + Texteinblendungen?
-3. Format: 16:9, 9:16 oder beides?
-4. „Wärmepumpen" nennen? Telefonnummer / „Jetzt anfragen" am Ende?
+| Zeit | Bild | Voiceover-Vorschlag (frei anpassbar) |
+|---|---|---|
+| 0:00–0:04,6 | Kundin grübelt, Gedankenblasen: Heizkörper / Wasserhahn, „?!" | „Hausman? Das sind doch die mit dem Sanitär …" |
+| 0:04,6–0:08,6 | Hausman-Techniker winkt, Sprechblase mit Logo | „Falsch gedacht – Hausman kann viel mehr!" |
+| 0:08,6–0:12,6 | Badezimmer: Regendusche, Fliesen, Schraubenschlüssel | „Wir bauen Ihr neues Badezimmer …" |
+| 0:12,6–0:16,6 | Heizung: Heizkörper, Thermostat zählt auf 22° | „… kümmern uns um Ihre Heizung …" |
+| 0:16,6–0:20,6 | Klima: Klimagerät, kühle Luft, Schneeflocken | „… installieren Ihre Klimaanlage …" |
+| 0:20,6–0:24,6 | Innenausbau: Wand wird gold gestrichen, Dielen | „… und übernehmen den kompletten Innenausbau." |
+| 0:24,6–0:27,6 | Techniker + Kundin, Blase mit allen 4 Icons | „Alles aus einer Hand." |
+| 0:27,6–0:30 | Logo, www.hausman.lu | „Hausman.lu – d'ass alles dran." |
 
-> `video.html` / `render.mjs` sind der erste Whiteboard-Prototyp (verworfen, dient nur als technische Basis für das Rendering).
+## Dateien
+- `export/hausman-erklaervideo.mp4` – fertiges Video (ohne Ton)
+- `video.html` – Animation (im Browser öffnen, Regler zum Durchscrubben)
+- `characters.js` – Figuren & Illustrationen
+- `render.mjs` – rendert das MP4 (`node render.mjs`)
