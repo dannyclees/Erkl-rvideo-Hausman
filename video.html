@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Hausman Erklärvideo</title>
+<style>
+  @font-face { font-family: "Caveat"; font-weight: 400; src: url("assets/fonts/caveat-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Caveat"; font-weight: 700; src: url("assets/fonts/caveat-latin-700-normal.woff2") format("woff2"); }
+  html, body { margin: 0; padding: 0; background: #111; }
+  #stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; background: #fcfbf7; }
+  svg { display: block; }
+  text { font-family: "Caveat", cursive; font-weight: 700; }
+  #controls { font: 14px sans-serif; color: #ddd; padding: 8px; }
+  body.render #controls { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+<svg id="svg" width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+      <stop offset="70%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.08"/>
+    </radialGradient>
+    <filter id="handShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="14" dy="18" stdDeviation="10" flood-color="#000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <g id="world"></g>
+  <rect width="1920" height="1080" fill="url(#vignette)" pointer-events="none"/>
+  <g id="hand" filter="url(#handShadow)">
+    <g id="handInner" transform="rotate(-28)">
+      <!-- sleeve: Hausman workwear, black with gold piping -->
+      <path d="M-30,250 L120,235 L190,1300 L-120,1300 Z" fill="#1c1c1c"/>
+      <path d="M-34,262 L124,246" stroke="#E8C85E" stroke-width="7" fill="none"/>
+      <path d="M-40,300 L130,285" stroke="#2c2c2c" stroke-width="3" fill="none"/>
+      <path d="M118,300 L178,1300" stroke="#E8C85E" stroke-width="4" fill="none" opacity="0.9"/>
+      <!-- small logo badge on the sleeve -->
+      <circle cx="60" cy="400" r="34" fill="none" stroke="#E8C85E" stroke-width="5"/>
+      <path d="M38,418 L38,392 Q38,380 48,380 Q58,380 58,392 L58,418 M62,418 L62,392 Q62,380 72,380 Q82,380 82,392 L82,418 M36,422 L86,376" stroke="#E8C85E" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <!-- back of palm -->
+      <path d="M-20,250 C-60,200 -55,140 -20,110 C10,85 70,95 95,130 C125,170 130,215 115,245 Z" fill="#efc3a0" stroke="#3a2a20" stroke-width="3.5"/>
+      <!-- marker -->
+      <path d="M0,0 L-9,26 L9,26 Z" fill="#222"/>
+      <rect x="-15" y="24" width="30" height="210" rx="7" fill="#2e2e2e"/>
+      <rect x="-15" y="24" width="30" height="22" rx="4" fill="#3d3d3d"/>
+      <rect x="-15" y="150" width="30" height="16" fill="#E8C85E"/>
+      <rect x="-4" y="50" width="6" height="90" rx="3" fill="#555"/>
+      <!-- thumb -->
+      <path d="M-55,170 C-60,140 -40,115 -18,108 C-5,104 8,110 10,122 C12,134 2,140 -10,144 C-30,152 -35,170 -38,185 Z" fill="#f4caa8" stroke="#3a2a20" stroke-width="3.5" stroke-linejoin="round"/>
+      <!-- index finger over the marker -->
+      <path d="M95,150 C70,120 40,95 18,88 C2,83 -12,92 -10,106 C-8,118 6,122 20,128 C45,140 60,160 70,180 Z" fill="#f4caa8" stroke="#3a2a20" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M2,98 C6,95 12,96 14,100" stroke="#c9967a" stroke-width="2.5" fill="none"/>
+      <!-- other fingers curled -->
+      <path d="M110,190 C95,170 70,160 55,170 C42,180 50,196 66,200 C85,206 98,214 108,226 Z" fill="#f0c4a0" stroke="#3a2a20" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M118,232 C105,214 82,208 70,218 C60,228 68,242 84,245 C98,248 106,254 112,262 Z" fill="#edc09c" stroke="#3a2a20" stroke-width="3.5" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
+</div>
+<div id="controls">
+  <button id="play">▶ Abspielen</button>
+  <input id="scrub" type="range" min="0" max="30" step="0.01" value="0" style="width:600px">
+  <span id="tlabel">0.00s</span>
+</div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const DURATION = 30;
+const INK = "#262626", GOLD = "#E8C85E", GOLD_DARK = "#C9A63B", GREY = "#444444";
+const world = document.getElementById("world");
+const hand = document.getElementById("hand");
+
+// --- scenes are laid out side by side on one big whiteboard, the camera pans ---
+const SCENES = { intro: 0, services: 2200, logo: 4400 };
+const CAM = [ [0, 0], [6.9, 0], [7.5, 2200], [23.9, 2200], [24.6, 4400], [30, 4400] ];
+
+const groups = {};
+for (const [name, x] of Object.entries(SCENES)) {
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("transform", `translate(${x},0)`);
+  world.appendChild(g);
+  groups[name] = g;
+}
+
+const items = [];   // everything with a timing
+let clipId = 0;
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent.appendChild(e);
+  return e;
+}
+
+// a hand-drawn stroke
+function stroke(scene, d, t0, t1, o = {}) {
+  const p = el("path", {
+    d, fill: "none", stroke: o.color || INK, "stroke-width": o.w || 7,
+    "stroke-linecap": "round", "stroke-linejoin": "round", opacity: o.opacity ?? 1,
+  }, groups[scene]);
+  const len = p.getTotalLength();
+  p.style.strokeDasharray = `${len} ${len}`;
+  p.style.strokeDashoffset = len;
+  items.push({ kind: "stroke", el: p, len, t0, t1, scene, pen: !o.noPen });
+  return p;
+}
+
+// a filled shape that fades in (colouring after the outline)
+function fill(scene, d, t0, t1, color = GOLD, opacity = 0.55) {
+  const p = el("path", { d, fill: color, stroke: "none", opacity: 0 }, groups[scene]);
+  // fills go behind the line work of the same scene
+  groups[scene].insertBefore(p, groups[scene].firstChild);
+  items.push({ kind: "fade", el: p, t0, t1, to: opacity });
+  return p;
+}
+
+// handwritten text revealed left to right with the pen following
+function write(scene, str, x, y, t0, t1, o = {}) {
+  const g = el("g", {}, groups[scene]);
+  if (o.rot) g.setAttribute("transform", `rotate(${o.rot} ${x} ${y})`);
+  const t = el("text", {
+    x, y, "font-size": o.size || 80, fill: o.color || INK,
+    "text-anchor": o.anchor || "middle", "font-weight": o.weight || 700,
+  }, g);
+  t.textContent = str;
+  const id = "clip" + (clipId++);
+  const cp = el("clipPath", { id, clipPathUnits: "userSpaceOnUse" }, g);
+  const r = el("rect", { x: 0, y: 0, width: 0, height: 0 }, cp);
+  t.setAttribute("clip-path", `url(#${id})`);
+  items.push({ kind: "text", el: t, rect: r, t0, t1, scene, x, y, rot: o.rot || 0, pen: true });
+  return t;
+}
+
+function fadeImg(scene, href, x, y, w, h, t0, t1) {
+  const i = el("image", { href, x, y, width: w, height: h, opacity: 0 }, groups[scene]);
+  items.push({ kind: "fade", el: i, t0, t1, to: 1 });
+  return i;
+}
+function fadeOut(node, t0, t1) { items.push({ kind: "fadeout", el: node, t0, t1 }); }
+
+// path helpers
+const rrect = (x, y, w, h, r) =>
+  `M${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x + r} Q${x},${y + h} ${x},${y + h - r} V${y + r} Q${x},${y} ${x + r},${y} Z`;
+const circle = (cx, cy, r, start = -90) => {
+  // drawn as a single path starting at "start" degrees, slightly overshooting like a real pen
+  const a0 = start * Math.PI / 180, pts = [];
+  for (let i = 0; i <= 64; i++) {
+    const a = a0 + (i / 64) * Math.PI * 2.04;
+    const rr = r * (1 + 0.012 * Math.sin(i * 0.7));
+    pts.push(`${(cx + rr * Math.cos(a)).toFixed(1)},${(cy + rr * Math.sin(a)).toFixed(1)}`);
+  }
+  return "M" + pts.join(" L");
+};
+const wave = (x, y0, y1, amp = 14) => {
+  let d = `M${x},${y0}`; const n = 3, step = (y1 - y0) / n;
+  for (let i = 0; i < n; i++) {
+    const ya = y0 + step * i, yb = ya + step;
+    d += ` C${x + (i % 2 ? -amp : amp)},${ya + step * 0.33} ${x + (i % 2 ? -amp : amp)},${ya + step * 0.66} ${x},${yb}`;
+  }
+  return d;
+};
+const cloud = (cx, cy, rx, ry, bumps = 11) => {
+  let d = "";
+  for (let i = 0; i <= bumps; i++) {
+    const a = Math.PI + (i / bumps) * Math.PI * 2;
+    const px = cx + rx * Math.cos(a), py = cy + ry * Math.sin(a);
+    if (i === 0) { d = `M${px.toFixed(1)},${py.toFixed(1)}`; continue; }
+    const am = Math.PI + ((i - 0.5) / bumps) * Math.PI * 2;
+    const cxp = cx + rx * 1.28 * Math.cos(am), cyp = cy + ry * 1.32 * Math.sin(am);
+    d += ` Q${cxp.toFixed(1)},${cyp.toFixed(1)} ${px.toFixed(1)},${py.toFixed(1)}`;
+  }
+  return d;
+};
+
+// ======================= SCENE 1: "Wer ist eigentlich Hausman?" =======================
+function buildIntro() {
+  const S = "intro";
+  write(S, "Wer ist eigentlich Hausman?", 960, 175, 0.25, 1.9, { size: 112 });
+  // person thinking
+  stroke(S, circle(400, 470, 72), 2.0, 2.45);
+  stroke(S, "M375,455 l0,4 M425,455 l0,4", 2.45, 2.55, { w: 9 });
+  stroke(S, "M380,500 Q390,492 400,500 Q410,508 420,500", 2.55, 2.65, { w: 6 });
+  stroke(S, "M400,542 L400,790", 2.65, 2.8);
+  stroke(S, "M400,610 L320,700 L372,560", 2.8, 2.98);
+  stroke(S, "M400,610 L490,690", 2.98, 3.06);
+  stroke(S, "M400,790 L345,955 M400,790 L458,955", 3.06, 3.2);
+  // thought bubble
+  stroke(S, circle(500, 380, 13), 3.25, 3.32, { w: 6 });
+  stroke(S, circle(560, 330, 22), 3.32, 3.42, { w: 6 });
+  stroke(S, cloud(1100, 560, 440, 235, 12), 3.45, 4.0, { w: 7 });
+  fill(S, cloud(1100, 560, 440, 235, 12), 3.9, 4.2, "#fff6d6", 1);
+  // radiator inside bubble
+  stroke(S, rrect(760, 450, 220, 140, 18), 4.05, 4.4);
+  stroke(S, "M800,465 V575 M840,465 V575 M880,465 V575 M920,465 V575 M955,465 V575", 4.4, 4.7, { w: 6 });
+  write(S, "nur Heizung?", 875, 662, 4.72, 5.2, { size: 64 });
+  // tap + drop
+  stroke(S, "M1200,450 H1330 Q1370,450 1370,490 V520 M1200,430 V470 M1250,450 V420 M1225,420 H1275", 5.22, 5.55);
+  stroke(S, "M1370,550 Q1352,580 1370,595 Q1388,580 1370,550 Z", 5.55, 5.68, { color: GOLD_DARK, w: 6 });
+  fill(S, "M1370,550 Q1352,580 1370,595 Q1388,580 1370,550 Z", 5.6, 5.8, GOLD, 0.9);
+  write(S, "nur Sanitär?", 1300, 662, 5.7, 6.15, { size: 64 });
+  // the answer
+  write(S, "Viel mehr!", 1470, 980, 6.2, 6.8, { size: 130, color: GOLD_DARK, rot: -5 });
+}
+
+// ======================= SCENE 2: the four services under one roof =======================
+function buildServices() {
+  const S = "services";
+  const C = [330, 750, 1170, 1590];
+  const LBL_Y = 905, LBL = 62;
+
+  // --- Heizung (radiator + heat) ---
+  let cx = C[0], t = 7.75;
+  stroke(S, rrect(cx - 125, 560, 250, 180, 20), t, t + 0.55);
+  fill(S, rrect(cx - 125, 560, 250, 180, 20), t + 0.5, t + 0.9, GOLD, 0.35);
+  stroke(S, [-85, -42, 0, 42, 85].map(dx => `M${cx + dx},578 V722`).join(" "), t + 0.55, t + 0.95, { w: 6 });
+  stroke(S, `M${cx - 95},740 V772 M${cx + 95},740 V772`, t + 0.95, t + 1.05);
+  stroke(S, `M${cx - 125},600 H${cx - 160} V575 M${cx - 172},575 H${cx - 148}`, t + 1.05, t + 1.2);
+  stroke(S, wave(cx - 65, 535, 430) + " " + wave(cx, 535, 410) + " " + wave(cx + 65, 535, 430), t + 1.25, t + 1.85, { color: GOLD_DARK, w: 8 });
+  write(S, "Heizung", cx, LBL_Y, t + 1.95, t + 2.6, { size: LBL });
+  stroke(S, `M${cx - 120},935 Q${cx},922 ${cx + 120},932`, t + 2.65, t + 2.9, { color: GOLD, w: 9 });
+
+  // --- Klima (outdoor unit like on the photo + snowflake) ---
+  cx = C[1]; t = 11.05;
+  stroke(S, rrect(cx - 160, 535, 320, 215, 16), t, t + 0.55);
+  fill(S, rrect(cx - 160, 535, 320, 215, 16), t + 0.5, t + 0.8, "#3a3a3a", 0.12);
+  stroke(S, circle(cx - 35, 642, 82), t + 0.55, t + 0.9);
+  fill(S, circle(cx - 35, 642, 82), t + 0.85, t + 1.15, GOLD, 0.45);
+  stroke(S, circle(cx - 35, 642, 16), t + 0.9, t + 1.0, { w: 6 });
+  stroke(S, [0, 60, 120, 180, 240, 300].map(a => {
+    const r = a * Math.PI / 180, x1 = cx - 35 + 22 * Math.cos(r), y1 = 642 + 22 * Math.sin(r);
+    const x2 = cx - 35 + 74 * Math.cos(r + 0.5), y2 = 642 + 74 * Math.sin(r + 0.5);
+    const xm = cx - 35 + 55 * Math.cos(r + 0.1), ym = 642 + 55 * Math.sin(r + 0.1);
+    return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${xm.toFixed(1)},${ym.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+  }).join(" "), t + 1.0, t + 1.35, { w: 5 });
+  stroke(S, `M${cx + 75},540 V745 M${cx + 98},580 H${cx + 140} M${cx + 98},605 H${cx + 140} M${cx + 98},630 H${cx + 140}`, t + 1.35, t + 1.6, { w: 6 });
+  stroke(S, `M${cx - 130},750 V780 H${cx + 130} V750`, t + 1.6, t + 1.72, { w: 6 });
+  // snowflake
+  const sx = cx + 150, sy = 455, sr = 42;
+  stroke(S, [0, 60, 120].map(a => {
+    const r = a * Math.PI / 180;
+    return `M${(sx - sr * Math.cos(r)).toFixed(1)},${(sy - sr * Math.sin(r)).toFixed(1)} L${(sx + sr * Math.cos(r)).toFixed(1)},${(sy + sr * Math.sin(r)).toFixed(1)}`;
+  }).join(" ") + " " + [0, 60, 120, 180, 240, 300].map(a => {
+    const r = a * Math.PI / 180, mx = sx + sr * 0.45 * Math.cos(r), my = sy + sr * 0.45 * Math.sin(r);
+    const l = 16, r1 = r + 0.8, r2 = r - 0.8;
+    return `M${(mx + l * Math.cos(r1)).toFixed(1)},${(my + l * Math.sin(r1)).toFixed(1)} L${mx.toFixed(1)},${my.toFixed(1)} L${(mx + l * Math.cos(r2)).toFixed(1)},${(my + l * Math.sin(r2)).toFixed(1)}`;
+  }).join(" "), t + 1.75, t + 1.98, { color: GOLD_DARK, w: 7 });
+  write(S, "Klima", cx, LBL_Y, t + 2.0, t + 2.55, { size: LBL });
+  stroke(S, `M${cx - 95},935 Q${cx},922 ${cx + 95},932`, t + 2.6, t + 2.85, { color: GOLD, w: 9 });
+
+  // --- Badezimmer (rain shower + tub) ---
+  cx = C[2]; t = 14.35;
+  stroke(S, `M${cx - 95},690 V470 Q${cx - 95},430 ${cx - 55},430 H${cx + 10} Q${cx + 30},430 ${cx + 30},455 V470`, t, t + 0.5);
+  stroke(S, `M${cx - 45},500 Q${cx + 30},440 ${cx + 105},500 Z`, t + 0.5, t + 0.75);
+  fill(S, `M${cx - 45},500 Q${cx + 30},440 ${cx + 105},500 Z`, t + 0.7, t + 0.95, "#2a2a2a", 0.85);
+  stroke(S, [-25, 5, 35, 65, 95].map((dx, i) => `M${cx + dx - 10},${525 + (i % 2) * 18} l-6,26`).join(" ") + " " +
+            [-15, 15, 45, 75].map((dx, i) => `M${cx + dx - 14},${585 + (i % 2) * 14} l-6,26`).join(" "), t + 0.95, t + 1.35, { color: GOLD_DARK, w: 6 });
+  stroke(S, `M${cx - 175},690 H${cx + 175} M${cx - 160},690 V720 Q${cx - 160},775 ${cx - 100},775 H${cx + 100} Q${cx + 160},775 ${cx + 160},720 V690`, t + 1.4, t + 1.85);
+  fill(S, `M${cx - 160},690 V720 Q${cx - 160},775 ${cx - 100},775 H${cx + 100} Q${cx + 160},775 ${cx + 160},720 V690 Z`, t + 1.8, t + 2.0, GOLD, 0.4);
+  stroke(S, `M${cx - 115},775 l-12,22 M${cx + 115},775 l12,22`, t + 1.85, t + 1.95, { w: 6 });
+  write(S, "Badezimmer", cx, LBL_Y, t + 2.0, t + 2.65, { size: LBL });
+  stroke(S, `M${cx - 145},935 Q${cx},922 ${cx + 145},932`, t + 2.68, t + 2.9, { color: GOLD, w: 9 });
+
+  // --- Innenrenovierung (wall + paint roller) ---
+  cx = C[3]; t = 17.65;
+  stroke(S, `M${cx - 165},470 V780 H${cx + 30}`, t, t + 0.35);
+  stroke(S, `M${cx - 165},560 H${cx - 20} M${cx - 165},670 H${cx - 60} M${cx - 100},470 V560 M${cx - 110},670 V780`, t + 0.35, t + 0.6, { w: 4, opacity: 0.55 });
+  // the roller paints gold stripes
+  stroke(S, `M${cx - 125},760 V505`, t + 0.65, t + 0.95, { color: GOLD, w: 58, opacity: 0.85 });
+  stroke(S, `M${cx - 62},505 V760`, t + 0.95, t + 1.25, { color: GOLD, w: 58, opacity: 0.85 });
+  stroke(S, rrect(cx - 20, 490, 125, 46, 12), t + 1.3, t + 1.6);
+  fill(S, rrect(cx - 20, 490, 125, 46, 12), t + 1.55, t + 1.75, GOLD, 0.9);
+  stroke(S, `M${cx + 105},513 H${cx + 132} V585 L${cx + 50},612 V660`, t + 1.6, t + 1.85);
+  stroke(S, rrect(cx + 34, 660, 32, 110, 10), t + 1.85, t + 2.0);
+  fill(S, rrect(cx + 34, 660, 32, 110, 10), t + 1.95, t + 2.1, "#262626", 0.95);
+  write(S, "Innenrenovierung", cx, LBL_Y, t + 2.05, t + 2.85, { size: LBL });
+  stroke(S, `M${cx - 205},935 Q${cx},922 ${cx + 205},932`, t + 2.88, t + 3.1, { color: GOLD, w: 9 });
+
+  // --- one roof over everything ---
+  t = 20.95;
+  stroke(S, "M50,405 L960,70 L1870,405", t, t + 0.75, { w: 9 });
+  stroke(S, "M140,370 V1015 H1780 V370", t + 0.8, t + 1.4, { w: 8 });
+  fill(S, "M50,405 L960,70 L1870,405 Z", t + 0.7, t + 1.0, GOLD, 0.18);
+  write(S, "Alles aus einer Hand.", 960, 330, t + 1.45, t + 2.55, { size: 96 });
+}
+
+// ======================= SCENE 3: logo + website =======================
+function buildLogo() {
+  const S = "logo";
+  const h = 640, w = 2000 * h / 1536, x = 960 - w * 0.4615, y = 95;   // centre the circle horizontally
+  const s = h / 1536, ccx = x + 923 * s, ccy = y + 584 * s, cr = 572 * s;
+  const ring = stroke(S, circle(ccx, ccy, cr, -150), 24.75, 25.75, { color: GOLD, w: 23 * s + 2 });
+  fadeImg(S, "assets/logo.png", x, y, w, h, 25.6, 26.3);
+  fadeOut(ring, 26.0, 26.3);
+  write(S, "www.hausman.lu", 960, 895, 26.4, 27.6, { size: 100, color: GREY });
+  const sub = el("text", {
+    x: 960, y: 985, "text-anchor": "middle", "font-size": 46, fill: GOLD_DARK, opacity: 0,
+    style: "font-family: Inter, sans-serif; font-weight: 600; letter-spacing: 3px",
+  }, groups[S]);
+  sub.textContent = "HEIZUNG · KLIMA · BADEZIMMER · INNENRENOVIERUNG";
+  items.push({ kind: "fade", el: sub, t0: 27.7, t1: 28.3, to: 1 });
+}
+
+// ======================= engine =======================
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const ease = p => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+
+function camX(t) {
+  for (let i = 0; i < CAM.length - 1; i++) {
+    const [ta, xa] = CAM[i], [tb, xb] = CAM[i + 1];
+    if (t <= tb) return xa + (xb - xa) * ease(clamp((t - ta) / (tb - ta)));
+  }
+  return CAM[CAM.length - 1][1];
+}
+
+// pen position (in world coordinates) of a drawing item at progress p
+function penAt(it, p) {
+  const off = SCENES[it.scene];
+  if (it.kind === "stroke") {
+    const pt = it.el.getPointAtLength(it.len * p);
+    return [pt.x + off, pt.y];
+  }
+  const b = it.bbox;
+  let px = b.x + b.width * p, py = b.y + b.height * (0.62 + 0.18 * Math.sin(p * b.width / 9));
+  if (it.rot) {
+    const r = it.rot * Math.PI / 180, dx = px - it.x, dy = py - it.y;
+    px = it.x + dx * Math.cos(r) - dy * Math.sin(r);
+    py = it.y + dx * Math.sin(r) + dy * Math.cos(r);
+  }
+  return [px + off, py];
+}
+
+let penItems = [];
+function prepare() {
+  for (const it of items) if (it.kind === "text") {
+    it.bbox = it.el.getBBox();
+    it.rect.setAttribute("y", it.bbox.y - 40);
+    it.rect.setAttribute("height", it.bbox.height + 80);
+  }
+  penItems = items.filter(i => i.pen).sort((a, b) => a.t0 - b.t0);
+}
+
+const OFF = [2150, 1350]; // hand rest position (screen space, off canvas)
+function handPos(t, cam) {
+  let active = null, prev = null, next = null;
+  for (const it of penItems) {
+    if (t >= it.t0 && t <= it.t1) active = it;
+    if (it.t1 < t) prev = it;
+    if (it.t0 > t && !next) next = it;
+  }
+  if (active) {
+    const [x, y] = penAt(active, (t - active.t0) / (active.t1 - active.t0));
+    return { x: x - cam, y, lift: 0 };
+  }
+  const offWorld = [OFF[0] + cam, OFF[1]];
+  const from = prev ? penAt(prev, 1) : offWorld;
+  const to = next ? penAt(next, 0) : offWorld;
+  const gap = next ? next.t0 - (prev ? prev.t1 : 0) : Infinity;
+  if (!next || gap > 2.2) {
+    // retreat off canvas, come back later
+    if (prev && t - prev.t1 < 0.5) {
+      const p = ease((t - prev.t1) / 0.5);
+      return { x: from[0] + (offWorld[0] - from[0]) * p - cam, y: from[1] + (offWorld[1] - from[1]) * p, lift: p };
+    }
+    if (next && next.t0 - t < 0.55) {
+      const p = ease(1 - (next.t0 - t) / 0.55);
+      const o = [OFF[0] + cam, OFF[1]];
+      return { x: o[0] + (to[0] - o[0]) * p - cam, y: o[1] + (to[1] - o[1]) * p, lift: 1 - p };
+    }
+    return { x: OFF[0], y: OFF[1], lift: 1 };
+  }
+  const tStart = prev ? prev.t1 : 0;
+  const travel = Math.min(gap, 0.45);
+  const p = ease(clamp((t - (next.t0 - travel)) / travel));
+  const lift = Math.sin(Math.PI * clamp((t - tStart) / gap));
+  return { x: from[0] + (to[0] - from[0]) * p - cam, y: from[1] + (to[1] - from[1]) * p - 10 * lift, lift };
+}
+
+function render(t) {
+  const cam = camX(t);
+  world.setAttribute("transform", `translate(${-cam},0)`);
+  for (const it of items) {
+    const p = clamp((t - it.t0) / (it.t1 - it.t0));
+    if (it.kind === "stroke") { it.el.style.strokeDashoffset = it.len * (1 - p); it.el.style.visibility = p > 0 ? "visible" : "hidden"; }
+    else if (it.kind === "text") {
+      it.rect.setAttribute("x", it.bbox.x - 20);
+      it.rect.setAttribute("width", p <= 0 ? 0 : (it.bbox.width + 40) * p);
+    } else if (it.kind === "fade") it.el.setAttribute("opacity", it.to * p);
+    else if (it.kind === "fadeout" && t >= it.t0) it.el.setAttribute("opacity", 1 - p);
+  }
+  const h = handPos(t, cam);
+  const rot = -28 + (h.x - 960) / 160;
+  hand.setAttribute("transform", `translate(${h.x.toFixed(1)},${h.y.toFixed(1)}) scale(${1 + 0.03 * h.lift})`);
+  document.getElementById("handInner").setAttribute("transform", `rotate(${rot.toFixed(2)})`);
+}
+
+// intervals where the pen actually touches the board (used for the marker sound)
+function drawIntervals() {
+  return penItems.map(i => [i.t0, i.t1, i.kind === "text" ? 1 : 0]);
+}
+
+window.setTime = t => render(t);
+window.drawIntervals = drawIntervals;
+window.ready = document.fonts.load('700 80px "Caveat"').then(() => {
+  buildIntro(); buildServices(); buildLogo();
+  prepare();
+  render(0);
+  return true;
+});
+
+// interactive preview
+let playing = false, startWall = 0, startT = 0;
+const scrub = document.getElementById("scrub"), lbl = document.getElementById("tlabel");
+scrub.oninput = () => { playing = false; render(+scrub.value); lbl.textContent = (+scrub.value).toFixed(2) + "s"; };
+document.getElementById("play").onclick = () => {
+  playing = true; startWall = performance.now(); startT = +scrub.value >= DURATION ? 0 : +scrub.value;
+  requestAnimationFrame(function loop(now) {
+    if (!playing) return;
+    const t = startT + (now - startWall) / 1000;
+    render(Math.min(t, DURATION)); scrub.value = t; lbl.textContent = t.toFixed(2) + "s";
+    if (t < DURATION) requestAnimationFrame(loop); else playing = false;
+  });
+};
+if (location.search.includes("render")) document.body.classList.add("render");
+</script>
+</body>
+</html>
